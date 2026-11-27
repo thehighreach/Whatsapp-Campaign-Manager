@@ -31,17 +31,20 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [mediaId, setMediaId] = useState("");
   const [headerType, setHeaderType] = useState<"image" | "video" | "document">("image");
+  const [replies, setReplies] = useState<any[]>([]);
 
   async function refresh() {
     try {
-      const [h, c, m] = await Promise.all([
+      const [h, c, m, r] = await Promise.all([
         fetch("/api/health").then((r) => r.ok ? r.json() : {}),
         fetch("/api/contacts").then((r) => r.ok ? r.json() : { contacts: [] }),
         fetch("/api/messages").then((r) => r.ok ? r.json() : { messages: [] }),
+        fetch("/api/inbound").then((r) => r.ok ? r.json() : { replies: [] }),
       ]);
       setHealth(h);
       setContacts(c?.contacts || []);
       setMessages(m?.messages || []);
+      setReplies(r?.replies || []);
     } catch (err) {
       console.error("Refresh error:", err);
     }
@@ -114,9 +117,9 @@ export default function Home() {
       const bodyVariableFields = String(form.get("bodyVariableFields") || "")
         .split(",").map((x) => x.trim()).filter(Boolean);
       const payload: any = {
-        campaignName: String(form.get("campaignName") || ""),
-        templateName: String(form.get("templateName") || ""),
-        languageCode: String(form.get("languageCode") || "en"),
+        campaignName: String(form.get("campaignName") || "").trim(),
+        templateName: String(form.get("templateName") || "").trim(),
+        languageCode: String(form.get("languageCode") || "").trim(),
         contactIds: selected,
         bodyVariableFields,
       };
@@ -130,7 +133,13 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({ error: `Server HTTP ${res.status}` }));
-      setNotice(res.ok ? `Campaign finished: ${data.sent} sent, ${data.failed} failed.` : (data.error || "Campaign send failed."));
+      if (res.ok) {
+        const firstErr = data.failures?.[0]?.error ? ` (${data.failures[0].error})` : "";
+        setNotice(`Campaign finished: ${data.sent} sent, ${data.failed} failed.${firstErr}`);
+      } else {
+        const detail = data.details?.[0] ? ` (${data.details[0].path?.join(".")}: ${data.details[0].message})` : "";
+        setNotice((data.error || "Campaign send failed.") + detail);
+      }
     } catch (err: any) {
       setNotice(`Network Error: ${err.message || "Failed to send campaign."}`);
     } finally {
@@ -147,7 +156,7 @@ export default function Home() {
   return (
     <main>
       <header className="topbar">
-        <div className="brandmark"> <img src="Logo.svg" height={32} width={32} alt="HighReach Logo" /> </div>
+        <div className="brandmark"> <img src="/logo.svg" height={32} width={32} alt="HighReach Logo" /> </div>
         <div>
           <div className="eyebrow">HIGH REACH</div>
           <h1>WhatsApp Campaign Manager</h1>
@@ -187,12 +196,17 @@ export default function Home() {
 
         <div className="panel">
           <div className="panelTitle"><span>02</span><h3>Upload campaign media</h3></div>
-          <p className="muted">Use media that matches the approved template header. JPG/PNG, MP4/3GP or PDF.</p>
+          <p className="muted">Use media that matches the approved template header. JPG/PNG, MP4/3GP or PDF. Meta media IDs expire after 30 days — re-upload for later campaigns.</p>
           <form onSubmit={uploadMedia} className="stack">
             <input name="file" type="file" accept="image/jpeg,image/png,video/mp4,video/3gpp,application/pdf" required />
             <button disabled={busy}>Upload to WhatsApp</button>
           </form>
-          {mediaId && <div className="mediaId"><b>Media ID</b><code>{mediaId}</code><span>{headerType}</span></div>}
+          {mediaId && (
+            <div className="mediaId">
+              <b>Media ID</b><code>{mediaId}</code><span>{headerType}</span>
+              <button type="button" className="secondary" onClick={() => setMediaId("")}>Clear</button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -218,10 +232,10 @@ export default function Home() {
         <div className="panel sendPanel">
           <div className="panelTitle"><span>04</span><h3>Send approved template</h3></div>
           <form onSubmit={sendCampaign} className="stack">
-            <label>Campaign name<input name="campaignName" defaultValue="High Reach Services Lead Campaign" required /></label>
-            <label>Approved Meta template name<input name="templateName" placeholder="high_reach_services_intro" required /></label>
-            <label>Language code<input name="languageCode" defaultValue="en" required /></label>
-            <label>Body variable fields<input name="bodyVariableFields" defaultValue="name,company" /><small>Comma-separated positional variables, matching template {"{{1}}"}, {"{{2}}"} etc.</small></label>
+            <label>Campaign name<input name="campaignName" placeholder="e.g. High Reach Services Lead Campaign" required /></label>
+            <label>Approved Meta template name<input name="templateName" placeholder="e.g. high_reach_services_intro or hello_world" required /></label>
+            <label>Language code<input name="languageCode" placeholder="e.g. en or en_US" required /></label>
+            <label>Body variable fields<input name="bodyVariableFields" placeholder="e.g. name,company (leave blank if none)" /><small>Comma-separated contact fields matching template {"{{1}}"}, {"{{2}}"} etc. Leave empty if your template has no variables.</small></label>
             <div className="sendSummary">
               <div><span>Recipients</span><b>{selected.length}</b></div>
               <div><span>Header media</span><b>{mediaId ? headerType : "None"}</b></div>
@@ -237,6 +251,17 @@ export default function Home() {
         <div className="tableWrap">
           <table><thead><tr><th>Phone</th><th>Template</th><th>Status</th><th>Time</th></tr></thead>
             <tbody>{messages.slice(0, 30).map((m) => <tr key={m.id}><td>+{m.phone}</td><td>{m.template_name || "—"}</td><td><span className={`pill ${m.status}`}>{m.status}</span></td><td>{new Date(m.created_at).toLocaleString()}</td></tr>)}</tbody></table>
+        </div>
+      </section>
+
+      <section className="panel logPanel">
+        <div className="panelTitle"><span>06</span><h3>Replies from leads</h3></div>
+        <div className="tableWrap">
+          <table><thead><tr><th>Phone</th><th>Name</th><th>Reply</th><th>Time</th></tr></thead>
+            <tbody>
+              {replies.slice(0, 30).map((r) => <tr key={r.id}><td>+{r.phone}</td><td>{r.profile_name || "—"}</td><td>{r.text || `[${r.type}]`}</td><td>{new Date(r.received_at).toLocaleString()}</td></tr>)}
+              {!replies.length && <tr><td colSpan={4} className="muted">No replies yet. Replies such as INTERESTED appear here once the webhook is live.</td></tr>}
+            </tbody></table>
         </div>
       </section>
 

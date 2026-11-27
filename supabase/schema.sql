@@ -53,9 +53,26 @@ create index if not exists idx_contacts_phone on public.contacts(phone);
 create index if not exists idx_message_logs_campaign on public.message_logs(campaign_id);
 create index if not exists idx_message_logs_meta_id on public.message_logs(meta_message_id);
 
+-- Inbound replies from leads (e.g. INTERESTED, STOP), captured by the webhook.
+create table if not exists public.inbound_messages (
+  id uuid primary key default gen_random_uuid(),
+  meta_message_id text unique,
+  phone text not null,
+  profile_name text,
+  type text,
+  text text,
+  context_message_id text,
+  received_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_inbound_messages_phone on public.inbound_messages(phone);
+create index if not exists idx_inbound_messages_received on public.inbound_messages(received_at desc);
+
 alter table public.contacts enable row level security;
 alter table public.campaigns enable row level security;
 alter table public.message_logs enable row level security;
+alter table public.inbound_messages enable row level security;
 
 -- This starter uses only the server-side service role key, which bypasses RLS.
 -- Do not expose SUPABASE_SERVICE_ROLE_KEY to the browser.

@@ -3,13 +3,18 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendTemplateMessage } from "@/lib/whatsapp";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// Sequential sends of up to MAX_CAMPAIGN_BATCH messages need more than the default serverless timeout.
+export const maxDuration = 60;
+
 const schema = z.object({
-  campaignName: z.string().min(2).max(120),
-  templateName: z.string().min(1).regex(/^[a-z0-9_]+$/),
-  languageCode: z.string().min(2).max(15).default("en"),
+  campaignName: z.string().trim().min(2).max(120),
+  templateName: z.string().trim().min(1).regex(/^[a-z0-9_]+$/, "Template name must be lowercase letters, numbers, or underscores"),
+  languageCode: z.string().trim().min(2).max(15).default("en"),
   contactIds: z.array(z.string().uuid()).min(1),
-  bodyVariableFields: z.array(z.string()).max(10).default([]),
-  headerMediaId: z.string().optional(),
+  bodyVariableFields: z.array(z.string().trim()).max(10).default([]),
+  headerMediaId: z.string().trim().optional(),
   headerType: z.enum(["image", "video", "document"]).optional(),
 });
 
@@ -67,7 +72,11 @@ export async function POST(request: NextRequest) {
 
     for (const contact of eligible) {
       try {
-        const bodyValues = input.bodyVariableFields.map((field) => fieldValue(contact, field));
+        const bodyValues = input.bodyVariableFields.map((field) => fieldValue(contact, field).trim());
+        const missing = input.bodyVariableFields.filter((_, i) => !bodyValues[i]);
+        if (missing.length) {
+          throw new Error(`Contact has no value for template variable field(s): ${missing.join(", ")}. Meta rejects empty variables.`);
+        }
         const response = await sendTemplateMessage({
           to: contact.phone,
           templateName: input.templateName,

@@ -14,3 +14,5 @@
 10. Only then import real opted-in leads and start small campaigns.
 
 Read `docs/META_SETUP.md` for the complete step-by-step process.
+
+For going live (real number, payment, Vercel, webhook, `subscribed_apps`, Live mode), follow `docs/PRODUCTION_SETUP.md`.

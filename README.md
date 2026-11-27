@@ -1,4 +1,4 @@
-a# High Reach WhatsApp Campaign Manager
+# High Reach WhatsApp Campaign Manager
 
 A High Reach-branded starter application for **official WhatsApp Business Platform / Cloud API** campaigns to **opted-in contacts**.
 
